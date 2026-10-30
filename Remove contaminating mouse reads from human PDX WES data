@@ -1,0 +1,28 @@
+#!/bin/bash
+#SBATCH -J File_name
+#SBATCH -p veryhimem
+#SBATCH -t 2-00:00:00
+#SBATCH --mem=500G
+#SBATCH -c 8
+#SBATCH -o xengsort-%j.out
+#SBATCH --error xengsort-%j.err
+
+module load singularity/4.3.2
+
+export TMPDIR=/DIR
+export TMP=/DIR
+export TEMP=/DIR
+
+mkdir -p /DIR
+mkdir -p /DIR
+
+cd /DIR
+
+singularity exec xengsort.sif \
+xengsort classify \
+--index /...Xengsort/index/hg38_mm39 \
+--fastq /Sample_R1_001.fastq.gz \
+--pairs /Sample_R2_001.fastq.gz \
+--out /DIR \
+--threads 8 \
+--progress
