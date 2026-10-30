@@ -1,0 +1,81 @@
+#The nf-core-sarek-based WES preprocessing workflow differs from the nf-core-sarek-based WGS workflow in that you need to specify --wes true and provide a target BED file.
+#Please prepare the four files described below and submit the run.sh file (the fourth file) to the HPC.
+#force_limits.config (the first file)
+process {
+
+    withName: '.*CNVKIT.*' {
+        executor = 'slurm'
+        queue    = 'veryhimem'
+        cpus     = 1
+        memory   = '500.GB'
+        time     = '48:00:00'
+        scratch  = true
+    }
+}
+
+#uhn.config (the second file)
+singularity {
+  enabled = true
+  autoMounts = true
+}
+
+wave {
+  enabled = false
+}
+
+process {
+  executor = 'slurm'
+  clusterOptions = '--account xxx'
+  queue = 'all'
+}
+
+#params_PDX_WES.yaml (the third file)
+input: "/...PDX_WES_samplesheet.csv"
+wes: true
+intervals: "/...Twist_Comprehensive_Exome_Covered_Targets_hg38.bed"
+outdir: "/DIR"
+igenomes_ignore: true
+igenomes_base: "/...reference_genome"
+fasta: "/...GRCh38.primary_assembly.genome.fa"
+fasta_fai: "/...GRCh38.primary_assembly.genome.fa.fai"
+dict: "/...GRCh38.primary_assembly.genome.dict"
+bwa: "/...GRCh38"
+dbsnp: "/...reference_genome/resources/Homo_sapiens_assembly38.dbsnp138.vcf.gz"
+dbsnp_tbi: "/...reference_genome/resources/Homo_sapiens_assembly38.dbsnp138.vcf.gz.tbi"
+snpeff_cache: "...reference_genome"
+vep_cache: "/...reference_genome"
+known_indels: "/...reference_genome/resources/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz"
+known_indels_tbi: "/...reference_genome/resources/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz.tbi"
+
+#run.sh (the fourth file)
+#!/bin/bash
+#SBATCH -J File_name
+#SBATCH -p veryhimem
+#SBATCH -t 4-00:00:00
+#SBATCH --mem=800G
+#SBATCH -c 1
+#SBATCH -o File_name-%j.out
+#SBATCH --error File_name-%j.err
+
+export NXF_OFFLINE=true
+
+module load java/21
+module load singularity/4.3.2
+
+export TMPDIR=/DIR
+export TMP=/DIR
+export TEMP=/DIR
+
+export NXF_SINGULARITY_CACHEDIR=/...sarek_containers
+
+mkdir -p /DIR
+
+cd /DIR
+
+./nextflow run /DIR \
+    -profile singularity \
+    -c /...uhn.config \
+    -c /...force_limits.config \
+    -params-file /File.yaml \
+    -w /.../work
+    -resume
