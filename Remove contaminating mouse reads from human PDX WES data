@@ -4,8 +4,8 @@
 #SBATCH -t 2-00:00:00
 #SBATCH --mem=500G
 #SBATCH -c 8
-#SBATCH -o xengsort-%j.out
-#SBATCH --error xengsort-%j.err
+#SBATCH -o File_name-%j.out
+#SBATCH --error File_name-%j.err
 
 module load singularity/4.3.2
 
