@@ -1,0 +1,92 @@
+#Please use the following command to identify the sample names embedded in the CRAM headers, which will be used in the Mutect2 workflow described below.
+samtools view -H \
+/...recal.cram \
+| grep "^@RG"
+
+Example output:@RG ID:1 SM:N414838_N414838 (this is the sample name you need) LB:lib1 PL:ILLUMINAv
+
+#run.sh (the complete Mutect2 workflow)
+#!/bin/bash
+#SBATCH -J File_name
+#SBATCH -p veryhimem
+#SBATCH -t 4-00:00:00
+#SBATCH --mem=500G
+#SBATCH -c 1
+#SBATCH -o File_name-%j.out
+#SBATCH --error File_name-%j.err
+
+module load gatk
+
+BED=/...Twist_Comprehensive_Exome_Covered_Targets_hg38.bed
+
+WORKDIR=/DIR
+
+mkdir -p ${WORKDIR}/results
+cd ${WORKDIR}/results
+
+# Run Mutect2
+gatk Mutect2 \
+-R /...reference_genome/GRCh38/GRCh38.primary_assembly.genome.fa \
+-I /...recal.cram \
+-I /...recal.cram \
+-normal N913291_N913291 \
+-L ${BED} \
+--germline-resource /...af-only-gnomad.hg38.vcf.gz \
+--panel-of-normals /...1000g_pon.hg38.vcf.gz \
+--f1r2-tar-gz Sample.f1r2.tar.gz \
+-O Sample.unfiltered.vcf.gz
+
+# Generate pileup table for the tumour
+gatk GetPileupSummaries \
+-R /...GRCh38.primary_assembly.genome.fa \
+-I /...recal.cram \
+-V /...small_exac_common_3.hg38.vcf.gz \
+-L ${BED} \
+-O Sample.pileups.table
+
+# Generate pileup table for the matched normal
+gatk GetPileupSummaries \
+-R /...GRCh38.primary_assembly.genome.fa \
+-I /...recal.cram \
+-V /...small_exac_common_3.hg38.vcf.gz \
+-L ${BED} \
+-O Sample.pileups.table
+
+# Calculate contamination
+gatk CalculateContamination \
+-I Sample.pileups.table \
+-matched N913291.pileups.table \
+-O Sample.contamination.table \
+-segments Sample.segments.table
+
+# Learn orientation bias model
+gatk LearnReadOrientationModel \
+-I Sample.f1r2.tar.gz \
+-O Sample.read-orientation-model.tar.gz
+
+# Filter Mutect2 calls
+gatk FilterMutectCalls \
+-R /...GRCh38.primary_assembly.genome.fa \
+-V Sample.unfiltered.vcf.gz \
+--stats Sample.unfiltered.vcf.gz.stats \
+--contamination-table Sample.contamination.table \
+--tumor-segmentation Sample.segments.table \
+--orientation-bias-artifact-priors Sample.read-orientation-model.tar.gz \
+-O Sample.filtered.vcf.gz
+
+# Retain PASS variants only
+gatk SelectVariants \
+-V Sample.filtered.vcf.gz \
+--exclude-filtered true \
+-O Sample.PASS.vcf.gz
+
+# Generate PASS-only Funcotator MAF
+gatk Funcotator \
+-R /...GRCh38.primary_assembly.genome.fa \
+-V Sample.PASS.vcf.gz \
+--data-sources-path /...funcotator_dataSources.v1.8.hg38.20230908s \
+--ref-version hg38 \
+--annotation-default Tumor_Sample_Barcode:Sample \
+--annotation-default Matched_Norm_Sample_Barcode:Sample \
+-O Sample.PASS.funcotated.maf \
+--output-file-format MAF
