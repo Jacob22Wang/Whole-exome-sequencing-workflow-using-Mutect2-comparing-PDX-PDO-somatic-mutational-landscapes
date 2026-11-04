@@ -1,0 +1,368 @@
+#The goal of this script was to generate a table summarizing shared and pair-specific (private) non-silent mutations across matched PDX-PDO pairs and to create a stacked bar plot based on these data.
+
+# Shared and private non-silent mutations across matched PDX-PDO pairs.R (script for generating the table)
+
+library(dplyr)
+
+# Verified non-silent mutation classes
+
+nonsilent_classes <- c(
+  "Missense_Mutation",
+  "Nonsense_Mutation",
+  "Frame_Shift_Del",
+  "Frame_Shift_Ins",
+  "In_Frame_Del",
+  "In_Frame_Ins",
+  "Splice_Site",
+  "Nonstop_Mutation",
+  "START_CODON_INS",
+  "START_CODON_SNP"
+)
+
+# Matched pairs
+
+pairs <- data.frame(
+  Pair = paste0("P", 1:7, "/O", 1:7),
+  PDX  = paste0("P", 1:7),
+  PDO  = paste0("O", 1:7),
+  stringsAsFactors = FALSE
+)
+
+# Function to generate unique mutation IDs
+
+get_mutation_ids <- function(maf) {
+  
+  maf <- maf %>%
+    filter(
+      Variant_Classification %in% nonsilent_classes
+    )
+  
+  unique(
+    paste(
+      maf$Chromosome,
+      maf$Start_Position,
+      maf$Reference_Allele,
+      maf$Tumor_Seq_Allele2,
+      sep = "_"
+    )
+  )
+}
+
+
+# Calculate overlap metrics
+
+summary.df <- lapply(seq_len(nrow(pairs)), function(i) {
+  
+  pdx.file <- paste0(
+    pairs$PDX[i],
+    ".PASS.funcotated.maf"
+  )
+  
+  pdo.file <- paste0(
+    pairs$PDO[i],
+    ".PASS.funcotated.maf"
+  )
+  
+  pdx <- read.delim(
+    pdx.file,
+    comment.char = "#",
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  
+  pdo <- read.delim(
+    pdo.file,
+    comment.char = "#",
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  
+  pdx.ids <- get_mutation_ids(pdx)
+  pdo.ids <- get_mutation_ids(pdo)
+  
+  shared.ids <- intersect(
+    pdx.ids,
+    pdo.ids
+  )
+  
+  pdx.only.ids <- setdiff(
+    pdx.ids,
+    pdo.ids
+  )
+  
+  pdo.only.ids <- setdiff(
+    pdo.ids,
+    pdx.ids
+  )
+  
+  pdx.total <- length(pdx.ids)
+  pdo.total <- length(pdo.ids)
+  
+  shared <- length(shared.ids)
+  pdx.only <- length(pdx.only.ids)
+  pdo.only <- length(pdo.only.ids)
+  
+  total.unique <- shared + pdx.only + pdo.only
+  
+  data.frame(
+    
+    Pair = pairs$Pair[i],
+    
+    PDX_total = pdx.total,
+    PDO_total = pdo.total,
+    
+    Shared = shared,
+    PDX_only = pdx.only,
+    PDO_only = pdo.only,
+    
+    PDX_retention_pct =
+      ifelse(
+        pdx.total > 0,
+        round(100 * shared / pdx.total, 1),
+        NA
+      ),
+    
+    PDO_retention_pct =
+      ifelse(
+        pdo.total > 0,
+        round(100 * shared / pdo.total, 1),
+        NA
+      ),
+    
+    Jaccard_pct =
+      ifelse(
+        total.unique > 0,
+        round(100 * shared / total.unique, 1),
+        NA
+      ),
+    
+    Shared_pct =
+      ifelse(
+        total.unique > 0,
+        round(100 * shared / total.unique, 1),
+        NA
+      ),
+    
+    PDX_only_pct =
+      ifelse(
+        total.unique > 0,
+        round(100 * pdx.only / total.unique, 1),
+        NA
+      ),
+    
+    PDO_only_pct =
+      ifelse(
+        total.unique > 0,
+        round(100 * pdo.only / total.unique, 1),
+        NA
+      )
+    
+  )
+  
+}) %>%
+  bind_rows()
+
+# Verify percentages sum to 100
+
+summary.df$Percent_Check <- round(
+  summary.df$Shared_pct +
+    summary.df$PDX_only_pct +
+    summary.df$PDO_only_pct,
+  1
+)
+
+# Save
+
+write.csv(
+  summary.df,
+  "Shared and private non-silent mutations across matched PDX-PDO pairs.csv",
+  row.names = FALSE
+)
+
+##############################################################################
+
+# Shared and private non-silent mutation stacked barplot.R (creates a tsv plotting table to generate the stacked barplot)
+
+rm(list = ls())
+
+library(data.table)
+library(ggplot2)
+
+# READ SUMMARY TABLE
+
+dt <- fread(
+  "Shared and private non-silent mutations across matched PDX-PDO pairs.csv"
+)
+
+# CONVERT TO LONG FORMAT
+
+plot.dt <- rbindlist(list(
+  
+  data.table(
+    Pair = dt$Pair,
+    Category = "PDX_only",
+    Percent = dt$PDX_only_pct
+  ),
+  
+  data.table(
+    Pair = dt$Pair,
+    Category = "Shared",
+    Percent = dt$Shared_pct
+  ),
+  
+  data.table(
+    Pair = dt$Pair,
+    Category = "PDO_only",
+    Percent = dt$PDO_only_pct
+  )
+  
+))
+
+# ORDER PAIRS
+
+plot.dt[
+  ,
+  Pair := factor(
+    Pair,
+    levels = rev(c(
+      "P1/O1",
+      "P2/O2",
+      "P3/O3",
+      "P4/O4",
+      "P5/O5",
+      "P6/O6",
+      "P7/O7"
+    ))
+  )
+]
+
+# STACK ORDER
+# LEFT -> RIGHT:
+# PDX_only -> Shared -> PDO_only
+
+plot.dt[
+  ,
+  Category := factor(
+    Category,
+    levels = c(
+      "PDO_only",
+      "Shared",
+      "PDX_only"
+    )
+  )
+]
+
+# PLOT
+
+p <- ggplot(
+  plot.dt,
+  aes(
+    y = Pair,
+    x = Percent,
+    fill = Category
+  )
+) +
+  
+  geom_col(
+    position = "fill",
+    width = 0.90,
+    color = "white",
+    linewidth = 0.2
+  ) +
+  
+  scale_fill_manual(
+    values = c(
+      PDO_only = "#555555",  # dark grey
+      Shared   = "#000000",  # black
+      PDX_only = "#B3B3B3"   # medium-light grey
+    ),
+    labels = c(
+      PDO_only = "PDO-only",
+      Shared   = "Shared",
+      PDX_only = "PDX-only"
+    )
+  ) +
+  
+  guides(
+    fill = guide_legend(
+      reverse = TRUE
+    )
+  ) +
+  
+  scale_x_continuous(
+    breaks = seq(0, 1, by = 0.2),
+    labels = c(
+      "0",
+      "20",
+      "40",
+      "60",
+      "80",
+      "100"
+    ),
+    expand = expansion(
+      mult = c(0, 0.02)
+    )
+  ) +
+  
+  labs(
+    x = "Non-synonymous mutations (%)",
+    y = NULL,
+    fill = NULL
+  ) +
+  
+  theme_bw(base_size = 16) +
+  
+  theme(
+    
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    
+    axis.text.y = element_text(
+      size = 14,
+      face = "bold"
+    ),
+    
+    axis.text.x = element_text(
+      size = 12
+    ),
+    
+    axis.title.x = element_text(
+      size = 16
+    ),
+    
+    legend.position = "top",
+    
+    legend.title = element_text(
+      size = 12,
+      face = "bold"
+    ),
+    
+    legend.text = element_text(
+      size = 11
+    ),
+    
+    panel.border = element_rect(
+      color = "black",
+      linewidth = 0.8
+    )
+  )
+
+# SAVE
+
+ggsave(
+  "Shared and private non-silent mutations across matched PDX-PDO pairs.png",
+  p,
+  width = 10,
+  height = 8,
+  dpi = 300,
+  bg = "white"
+)
+
+# EXPORT PLOTTING TABLE
+
+fwrite(
+  plot.dt,
+  "Shared and private non-silent mutations across matched PDX-PDO pairs.tsv",
+  sep = "\t"
+)
+
