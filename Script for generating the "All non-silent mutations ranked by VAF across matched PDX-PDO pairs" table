@@ -1,0 +1,222 @@
+#This script was used to generate the "All non-silent mutations ranked by VAF across matched PDX-PDO pairs" table.
+# All non-silent mutations ranked by VAF across matched PDX-PDO pairs.R
+
+rm(list = ls())
+
+library(data.table)
+library(dplyr)
+
+# Verified non-silent mutation classes
+
+non_silent <- c(
+  "Missense_Mutation",
+  "Nonsense_Mutation",
+  "Frame_Shift_Del",
+  "Frame_Shift_Ins",
+  "In_Frame_Del",
+  "In_Frame_Ins",
+  "Splice_Site",
+  "Nonstop_Mutation",
+  "START_CODON_INS",
+  "START_CODON_SNP"
+)
+
+# Sample order
+
+sample.order <- c(
+  "P1","O1",
+  "P2","O2",
+  "P3","O3",
+  "P4","O4",
+  "P5","O5",
+  "P6","O6",
+  "P7","O7"
+)
+
+total.samples <- length(sample.order)
+
+# Read PASS Funcotator MAFs
+
+maf.files <- sort(
+  list.files(
+    pattern = "^[PO][1-7]\\.PASS\\.funcotated\\.maf$",
+    full.names = TRUE
+  )
+)
+
+all_mutations <- list()
+
+for(f in maf.files){
+  
+  sample.name <- sub(
+    "\\.PASS\\.funcotated\\.maf$",
+    "",
+    basename(f)
+  )
+  
+  cat("Processing:", sample.name, "\n")
+  
+  maf <- fread(
+    f,
+    skip = "Hugo_Symbol"
+  )
+  
+  # Keep verified non-silent mutations
+  
+  maf <- maf %>%
+    filter(
+      Variant_Classification %in% non_silent
+    )
+  
+  # Sample metadata and VAF
+  # Use tumor_f to match Top20 VAF heatmap workflow
+  
+  maf <- maf %>%
+    mutate(
+      
+      Sample = sample.name,
+      
+      Type = ifelse(
+        grepl("^P", sample.name),
+        "PDX",
+        "PDO"
+      ),
+      
+      VAF = 100 * as.numeric(tumor_f)
+      
+    )
+  
+  # Keep required columns
+  
+  maf <- maf %>%
+    select(
+      Hugo_Symbol,
+      Variant_Classification,
+      Protein_Change,
+      COSMIC_overlapping_mutations,
+      Chromosome,
+      Start_Position,
+      Reference_Allele,
+      Tumor_Seq_Allele2,
+      t_alt_count,
+      t_ref_count,
+      tumor_f,
+      Sample,
+      Type,
+      VAF
+    )
+  
+  all_mutations[[sample.name]] <- maf
+}
+
+# Combine all samples
+
+combined <- bind_rows(all_mutations)
+
+# Keep highest-VAF mutation per gene per sample
+# Same logic as Top20 VAF heatmap
+
+combined <- combined %>%
+  group_by(
+    Sample,
+    Hugo_Symbol
+  ) %>%
+  slice_max(
+    order_by = VAF,
+    n = 1,
+    with_ties = FALSE
+  ) %>%
+  ungroup()
+
+# Gene occurrence frequency across cohort
+
+gene.freq <- combined %>%
+  distinct(
+    Hugo_Symbol,
+    Sample
+  ) %>%
+  count(
+    Hugo_Symbol,
+    name = "Gene_Count"
+  ) %>%
+  mutate(
+    Gene_Frequency_Percent = round(
+      100 * Gene_Count / total.samples,
+      1
+    )
+  ) %>%
+  select(
+    Hugo_Symbol,
+    Gene_Frequency_Percent
+  )
+
+# Merge frequency
+
+combined <- combined %>%
+  left_join(
+    gene.freq,
+    by = "Hugo_Symbol"
+  )
+
+# Sample ordering
+
+combined$Sample <- factor(
+  combined$Sample,
+  levels = sample.order
+)
+
+# Final table
+#
+# Sample order:
+# P1 -> O1 -> P2 -> O2 -> P3 -> O3 -> P4 -> O4
+# -> P5 -> O5 -> P6 -> O6 -> P7 -> O7
+#
+# Within each sample:
+# Highest VAF first
+
+final.table <- combined %>%
+  arrange(
+    Sample,
+    desc(VAF),
+    desc(Gene_Frequency_Percent),
+    Hugo_Symbol
+  ) %>%
+  transmute(
+    
+    Sample,
+    
+    Type,
+    
+    Gene = Hugo_Symbol,
+    
+    Gene_Frequency_Percent,
+    
+    Variant_Classification,
+    
+    Protein_Change,
+    
+    VAF,
+    
+    t_alt_count,
+    
+    t_ref_count,
+    
+    COSMIC_overlapping_mutations,
+    
+    Chromosome,
+    
+    Start_Position,
+    
+    Reference_Allele,
+    
+    Tumor_Seq_Allele2
+  )
+
+# Save
+
+write.csv(
+  final.table,
+  "All non-silent mutations ranked by VAF across matched PDX-PDO pairs.csv",
+  row.names = FALSE,
+  quote = FALSE
+)
