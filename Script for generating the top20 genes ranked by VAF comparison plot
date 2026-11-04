@@ -1,0 +1,615 @@
+
+# Generate pair-specific Top 20 mutation tables for comparing mutation landscapes between matched PDX and PDO models
+
+library(maftools)
+library(dplyr)
+
+# Working directory
+
+setwd("/DIR")
+
+# Model pairs
+
+pairs <- data.frame(
+  PDX = paste0("P", 1:7),
+  PDO = paste0("O", 1:7),
+  stringsAsFactors = FALSE
+)
+
+# Loop through pairs
+
+for(i in seq_len(nrow(pairs))) {
+  
+  pdx <- pairs$PDX[i]
+  pdo <- pairs$PDO[i]
+  
+
+  # Read PASS MAFs
+  
+  pdx.maf <- read.maf(
+    maf = paste0(pdx, ".PASS.funcotated.maf"),
+    verbose = FALSE
+  )
+  
+  pdo.maf <- read.maf(
+    maf = paste0(pdo, ".PASS.funcotated.maf"),
+    verbose = FALSE
+  )
+  
+  pdx.df <- as.data.frame(pdx.maf@data)
+  pdo.df <- as.data.frame(pdo.maf@data)
+  
+ 
+  # Remove variants lacking tumor_f (VAF)
+  
+  pdx.df <- pdx.df %>%
+    filter(!is.na(tumor_f))
+  
+  pdo.df <- pdo.df %>%
+    filter(!is.na(tumor_f))
+  
+  # Highest VAF mutation per gene in PDX
+  
+  pdx.top <- pdx.df %>%
+    arrange(desc(tumor_f)) %>%
+    group_by(Hugo_Symbol) %>%
+    slice(1) %>%
+    ungroup() %>%
+    arrange(desc(tumor_f))
+
+  # Top 20 genes
+  
+  pdx.top20 <- pdx.top %>%
+    slice_head(n = 20) %>%
+    mutate(
+      Rank = row_number(),
+      PDX_VAF = round(tumor_f * 100, 1)
+    )
+  
+  # Match genes in PDO
+  
+  pdo.match <- pdo.df %>%
+    filter(
+      Hugo_Symbol %in% pdx.top20$Hugo_Symbol
+    ) %>%
+    arrange(desc(tumor_f)) %>%
+    group_by(Hugo_Symbol) %>%
+    slice(1) %>%
+    ungroup() %>%
+    mutate(
+      PDO_VAF = round(tumor_f * 100, 1)
+    )
+  
+  # Build pair table
+  
+  pair.table <- pdx.top20 %>%
+    mutate(
+      PDX_Type = as.character(Variant_Classification)
+    ) %>%
+    select(
+      Rank,
+      Hugo_Symbol,
+      PDX_Type,
+      PDX_VAF
+    ) %>%
+    left_join(
+      pdo.match %>%
+        mutate(
+          PDO_Type = as.character(Variant_Classification)
+        ) %>%
+        select(
+          Hugo_Symbol,
+          PDO_Type,
+          PDO_VAF
+        ),
+      by = "Hugo_Symbol"
+    )
+  
+  # Mark absent PDO mutations
+  
+  pair.table <- pair.table %>%
+    mutate(
+      PDO_Type = ifelse(is.na(PDO_Type), "Absent", PDO_Type)
+    )
+  
+  # Save table
+  
+  outfile <- paste0(
+    pdx,
+    "_",
+    pdo,
+    "_Top20_VAF_Table.csv"
+  )
+  
+  write.csv(
+    pair.table,
+    outfile,
+    row.names = FALSE,
+    quote = FALSE
+  )
+
+##############################################################################################
+# Build All_Pairs_Top20_VAF_Master_Table.csv (this script combines the outputs of the previous script into a single master table)
+
+library(maftools)
+library(dplyr)
+
+# Working directory
+
+setwd("/DIR")
+
+# Model pairs
+
+pairs <- data.frame(
+  PDX = paste0("P", 1:7),
+  PDO = paste0("O", 1:7),
+  stringsAsFactors = FALSE
+)
+
+# Container
+
+master.table <- list()
+
+# Loop through pairs
+
+for(i in seq_len(nrow(pairs))) {
+  
+  pdx <- pairs$PDX[i]
+  pdo <- pairs$PDO[i]
+  
+  cat("\n======================================\n")
+  cat("Processing:", pdx, "vs", pdo, "\n")
+  cat("======================================\n")
+  
+  # Read PASS MAFs
+  
+  pdx.maf <- read.maf(
+    maf = paste0(pdx, ".PASS.funcotated.maf"),
+    verbose = FALSE
+  )
+  
+  pdo.maf <- read.maf(
+    maf = paste0(pdo, ".PASS.funcotated.maf"),
+    verbose = FALSE
+  )
+  
+  pdx.df <- as.data.frame(pdx.maf@data)
+  pdo.df <- as.data.frame(pdo.maf@data)
+  
+  # Remove variants lacking tumor_f
+  
+  pdx.df <- pdx.df %>%
+    filter(!is.na(tumor_f))
+  
+  pdo.df <- pdo.df %>%
+    filter(!is.na(tumor_f))
+  
+  # Highest-VAF mutation per gene in PDX
+  
+  pdx.top <- pdx.df %>%
+    arrange(desc(tumor_f)) %>%
+    group_by(Hugo_Symbol) %>%
+    slice(1) %>%
+    ungroup() %>%
+    arrange(desc(tumor_f))
+  
+  # Top 20 genes
+  
+  pdx.top20 <- pdx.top %>%
+    slice_head(n = 20) %>%
+    mutate(
+      Rank = row_number(),
+      PDX_VAF = round(tumor_f * 100, 1)
+    )
+
+  # Match genes in PDO
+  
+  pdo.match <- pdo.df %>%
+    filter(
+      Hugo_Symbol %in% pdx.top20$Hugo_Symbol
+    ) %>%
+    arrange(desc(tumor_f)) %>%
+    group_by(Hugo_Symbol) %>%
+    slice(1) %>%
+    ungroup() %>%
+    mutate(
+      PDO_VAF = round(tumor_f * 100, 1)
+    )
+  
+  # Build pair table
+  
+  pair.table <- pdx.top20 %>%
+    mutate(
+      PDX_Type = as.character(Variant_Classification)
+    ) %>%
+    select(
+      Rank,
+      Gene = Hugo_Symbol,
+      PDX_Type,
+      PDX_VAF
+    ) %>%
+    left_join(
+      pdo.match %>%
+        mutate(
+          PDO_Type = as.character(Variant_Classification)
+        ) %>%
+        select(
+          Hugo_Symbol,
+          PDO_Type,
+          PDO_VAF
+        ),
+      by = c(
+        "Gene" = "Hugo_Symbol"
+      )
+    ) %>%
+    mutate(
+      PDO_Type = ifelse(is.na(PDO_Type), "Absent", PDO_Type),
+      Pair = paste0(pdx, "_", pdo)
+    ) %>%
+    select(
+      Pair,
+      Rank,
+      Gene,
+      PDX_Type,
+      PDX_VAF,
+      PDO_Type,
+      PDO_VAF
+    )
+
+  # Save individual table
+  
+  write.csv(
+    pair.table,
+    paste0(
+      pdx,
+      "_",
+      pdo,
+      "_Top20_VAF_Table.csv"
+    ),
+    row.names = FALSE,
+    quote = FALSE
+  )
+  
+  # Add to master table
+  
+  master.table[[i]] <- pair.table
+
+# Combine all pairs
+
+master.table <- bind_rows(master.table)
+
+# Save master table
+
+write.csv(
+  master.table,
+  "All_Pairs_Top20_VAF_Master_Table.csv",
+  row.names = FALSE,
+  quote = FALSE
+)
+
+##############################################################
+# Combined_VAF_Heatmap_Top20_Publication.R (this script was used to convert the master Top20 VAF table generated by the previous script into a heatmap displaying mutation types and associated VAFs across matched PDX-PDO pairs)
+
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+
+# Load master table
+
+master <- read.csv(
+  "All_Pairs_Top20_VAF_Master_Table.csv",
+  stringsAsFactors = FALSE
+)
+
+# Gene order
+
+gene.order <- unique(master$Gene)
+
+gene.pos <- data.frame(
+  Gene = gene.order,
+  x = seq_along(gene.order)
+)
+
+# Sample order
+
+sample.order <- c(
+  "P1","O1",
+  "P2","O2",
+  "P3","O3",
+  "P4","O4",
+  "P5","O5",
+  "P6","O6",
+  "P7","O7"
+)
+
+# Heatmap dataframe
+
+tile.df <- bind_rows(
+  
+  master %>%
+    transmute(
+      Sample = sub("_.*", "", Pair),
+      Gene,
+      Mutation = as.character(PDX_Type)
+    ),
+  
+  master %>%
+    transmute(
+      Sample = sub(".*_", "", Pair),
+      Gene,
+      Mutation = as.character(PDO_Type)
+    )
+  
+)
+
+# Complete matrix
+
+full.grid <- expand.grid(
+  Sample = sample.order,
+  Gene = gene.order,
+  stringsAsFactors = FALSE
+)
+
+tile.df <- full.grid %>%
+  left_join(
+    tile.df,
+    by = c("Sample","Gene")
+  )
+
+tile.df$Mutation <- ifelse(
+  is.na(tile.df$Mutation),
+  "Absent",
+  tile.df$Mutation
+)
+
+tile.df <- tile.df %>%
+  left_join(
+    gene.pos,
+    by = "Gene"
+  )
+
+tile.df$Sample <- factor(
+  tile.df$Sample,
+  levels = rev(sample.order)
+)
+
+# VAF dataframe
+
+value.df <- bind_rows(
+  
+  master %>%
+    transmute(
+      Sample = sub("_.*","",Pair),
+      Gene,
+      Value = sprintf("%d", round(PDX_VAF))
+    ),
+  
+  master %>%
+    transmute(
+      Sample = sub(".*_","",Pair),
+      Gene,
+      Value = ifelse(
+        is.na(PDO_VAF),
+        "—",
+        sprintf("%d", round(PDO_VAF))
+      )
+    )
+  
+)
+
+value.df <- full.grid %>%
+  left_join(
+    value.df,
+    by = c("Sample","Gene")
+  )
+
+value.df$Value <- ifelse(
+  is.na(value.df$Value),
+  "—",
+  value.df$Value
+)
+
+value.df <- value.df %>%
+  left_join(
+    gene.pos,
+    by = "Gene"
+  )
+
+value.df$Sample <- factor(
+  value.df$Sample,
+  levels = rev(sample.order)
+)
+
+# Mutation palette
+
+mutation_cols <- c(
+  "Missense_Mutation" = "#4E79A7",
+  "Nonsense_Mutation" = "#E15759",
+  "Frame_Shift_Del"   = "#F28E2B",
+  "Frame_Shift_Ins"   = "#FFBE7D",
+  "In_Frame_Del"      = "#2B2D42",
+  "In_Frame_Ins"      = "#9C755F",
+  "Splice_Site"       = "#805AD5",
+  "Absent"            = "#FFFFFF"
+)
+
+# Main heatmap
+
+p_main <- ggplot(
+  tile.df,
+  aes(
+    x = x,
+    y = Sample,
+    fill = Mutation
+  )
+) +
+  geom_tile(
+    colour = NA
+  ) +
+  
+  geom_text(
+    data = gene.pos,
+    aes(
+      x = x,
+      y = length(sample.order) + 0.55,
+      label = Gene
+    ),
+    inherit.aes = FALSE,
+    angle = 90,
+    fontface = "italic",
+    size = 6,
+    hjust = 0,
+    vjust = 0.5
+  ) +
+  
+  scale_fill_manual(
+    values = mutation_cols,
+    drop = FALSE
+  ) +
+  
+  scale_x_continuous(
+    breaks = gene.pos$x,
+    labels = NULL,
+    expand = c(0,0)
+  ) +
+  
+  scale_y_discrete(
+    expand = c(0,0)
+  ) +
+  
+  coord_cartesian(
+    ylim = c(0.5, length(sample.order) + 0.5),
+    clip = "off"
+  ) +
+  
+  labs(
+    x = NULL,
+    y = NULL
+  ) +
+  
+  theme_bw() +
+  
+  theme(
+    panel.grid = element_blank(),
+    
+    panel.background = element_rect(
+      fill = "white",
+      colour = NA
+    ),
+    
+    plot.background = element_rect(
+      fill = "white",
+      colour = NA
+    ),
+    
+    axis.text.x = element_blank(),
+    
+    axis.ticks.x = element_blank(),
+    
+    axis.text.y = element_text(
+      face = "bold",
+      size = 26
+    ),
+    
+    plot.margin = margin(
+      t = 130,
+      r = 5,
+      b = 5,
+      l = 5
+    ),
+    
+    legend.position = "none"
+  )
+
+# VAF table
+
+p_values <- ggplot(
+  value.df,
+  aes(
+    x = x,
+    y = Sample
+  )
+) +
+  geom_tile(
+    fill = "white",
+    colour = "grey92",
+    linewidth = 0.05
+  ) +
+  
+  geom_text(
+    aes(label = Value),
+    size = 4.2,
+    fontface = "bold"
+  ) +
+  
+  scale_x_continuous(
+    breaks = gene.pos$x,
+    labels = NULL,
+    expand = c(0,0)
+  ) +
+  
+  scale_y_discrete(
+    expand = c(0,0)
+  ) +
+  
+  labs(
+    x = NULL,
+    y = NULL
+  ) +
+  
+  theme_bw() +
+  
+  theme(
+    panel.grid = element_blank(),
+    
+    panel.border = element_blank(),
+    
+    panel.background = element_rect(
+      fill = "white",
+      colour = NA
+    ),
+    
+    axis.text.x = element_blank(),
+    
+    axis.ticks.x = element_blank(),
+    
+    axis.text.y = element_text(
+      face = "bold",
+      size = 22
+    ),
+    
+    plot.margin = margin(
+      t = -2,
+      r = 5,
+      b = 0,
+      l = 5
+    )
+  )
+
+# Combine
+
+final.plot <-
+  p_main /
+  p_values +
+  plot_layout(
+    heights = c(
+      3.2,
+      2.0
+    )
+  )
+
+# Save
+
+ggsave(
+  filename = "AllPairs_Merged_Top20_VAF_Heatmap_Publication_Final.pdf",
+  plot = final.plot,
+  width = 40,
+  height = 12,
+  bg = "white"
+)
+
+print(final.plot)
+
+ 
+
+
