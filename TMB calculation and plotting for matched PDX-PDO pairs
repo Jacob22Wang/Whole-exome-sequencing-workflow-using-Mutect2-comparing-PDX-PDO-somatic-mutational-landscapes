@@ -1,7 +1,7 @@
 #The command was used to calculate the target territory of the Twist Comprehensive Exome panel used in our study.  
 awk 'BEGIN{sum=0} {sum+=$3-$2} END {print sum"\t"sum/1000000}' \
 Twist_Comprehensive_Exome_Covered_Targets_hg38.bed
-#Please apply the following two scripts to generate a TMB vs Sample plot.
+#Please apply the following two scripts to generate a stacked TMB composition plot by mutation class across samples.
 #!/usr/bin/env Rscript (script used to create the TMB table for subsequent plotting)
 
 library(dplyr)
@@ -141,7 +141,7 @@ library(ggplot2)
 # Working directory
 
 setwd(
-  "/Users/jiahuiwang/Desktop/Organoid vs Xenograft Miniproject/funcotator/Final_WES_analyses_folder_with_target_BED"
+  "/DIR"
 )
 
 # Parameters
