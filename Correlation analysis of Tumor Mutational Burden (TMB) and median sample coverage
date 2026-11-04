@@ -1,0 +1,137 @@
+# TMB vs Median Sample Coverage
+# PDX vs PDO cohort
+
+coverage <- c(
+  42,63,
+  51,49,
+  49,44,
+  26,56,
+  63,66,
+  45,42,
+  53,85
+)
+
+tmb <- c(
+  2.30,5.15,
+  5.12,4.66,
+  4.11,6.00,
+  3.18,3.20,
+  2.96,3.45,
+  5.31,5.51,
+  2.30,2.96
+)
+
+samples <- c(
+  "P1","O1",
+  "P2","O2",
+  "P3","O3",
+  "P4","O4",
+  "P5","O5",
+  "P6","O6",
+  "P7","O7"
+)
+
+type <- ifelse(grepl("^P", samples), "PDX", "PDO")
+
+# Correlation tests
+pearson <- cor.test(
+  coverage,
+  tmb,
+  method = "pearson"
+)
+
+spearman <- cor.test(
+  coverage,
+  tmb,
+  method = "spearman"
+)
+
+# Save plot
+png(
+  filename = "TMB_vs_MedianCoverage_Publication.png",
+  width = 2400,
+  height = 2000,
+  res = 300,
+  bg = "white"
+)
+
+par(
+  mar = c(5, 5, 4, 2),
+  bty = "l"
+)
+
+plot(
+  coverage,
+  tmb,
+  
+  pch = ifelse(type == "PDX", 16, 17),
+  col = ifelse(type == "PDX", "#2C7FB8", "#D95F02"),
+  cex = 2.2,
+  
+  xlab = "Median sample coverage (\u00D7)",
+  ylab = "TMB (non-synonymous mutations/Mb)",
+  
+  cex.lab = 1.0,
+  cex.axis = 1.0,
+  
+  xlim = c(18, 93),
+  ylim = c(1.8, 6.4)
+)
+
+# Sample labels
+text(
+  coverage,
+  tmb,
+  labels = samples,
+  pos = 3,
+  cex = 0.9
+)
+
+# Regression line
+abline(
+  lm(tmb ~ coverage),
+  col = "#D62728",
+  lwd = 3,
+  lty = 2
+)
+
+# Legend
+legend(
+  "topright",
+  legend = c("PDX", "PDO"),
+  pch = c(16, 17),
+  pt.cex = 1.5,
+  col = c("#2C7FB8", "#D95F02"),
+  bty = "n",
+  cex = 1.2
+)
+
+# Pearson correlation
+mtext(
+  paste0(
+    "Pearson r = ",
+    sprintf("%.3f", pearson$estimate),
+    ", p = ",
+    sprintf("%.3f", pearson$p.value)
+  ),
+  side = 3,
+  line = 2.2,
+  cex = 1.0,
+  font = 1
+)
+
+# Spearman correlation
+mtext(
+  paste0(
+    "Spearman \u03C1 = ",
+    sprintf("%.3f", spearman$estimate),
+    ", p = ",
+    sprintf("%.3f", spearman$p.value)
+  ),
+  side = 3,
+  line = 0.9,
+  cex = 1.0,
+  font = 1
+)
+
+dev.off()
